@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: fastapi-demo
+data:
+  APP_NAME: "k8s-fastapi-kustomize"
+  ENVIRONMENT: "base"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"

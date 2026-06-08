@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint do Dockerfile (hadolint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: app/Dockerfile
+      - name: Checa sintaxe Python
+        run: python -m py_compile app/main.py
+
+  k8s-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instala kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar xz -C /usr/local/bin kubeconform
+      - name: Valida manifestos (dev e prod)
+        run: |
+          for ovl in dev prod; do
+            echo "== overlay: $ovl =="
+            kubectl kustomize k8s/overlays/$ovl \
+              | kubeconform -strict -summary \
+                  -schema-location default \
+                  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          done
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build da imagem
+        run: docker build -t k8s-fastapi-kustomize:ci ./app
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: [lint, k8s-validate, build]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cria cluster kind
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ci
+          config: kind-config.yaml
+      - name: Build e carrega a imagem
+        run: |
+          docker build -t k8s-fastapi-kustomize:dev ./app
+          kind load docker-image k8s-fastapi-kustomize:dev --name ci
+      - name: Instala ingress-nginx
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+          kubectl wait --namespace ingress-nginx \
+            --for=condition=ready pod \
+            --selector=app.kubernetes.io/component=controller \
+            --timeout=180s
+      - name: Deploy (overlay dev)
+        run: |
+          kubectl apply -k k8s/overlays/dev
+          kubectl -n fastapi-dev rollout status deploy/api --timeout=180s
+      - name: Smoke test
+        run: |
+          curl -sf -H "Host: fastapi.localdev.me" http://localhost/healthz
+          curl -sf -H "Host: fastapi.localdev.me" http://localhost/readyz
+          curl -sf -H "Host: fastapi.localdev.me" http://localhost/ | grep -q "Hello from Kubernetes"
