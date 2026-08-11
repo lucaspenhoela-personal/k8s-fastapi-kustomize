@@ -1,5 +1,7 @@
 # k8s-fastapi-kustomize
 
+[![CI](https://github.com/lucaspenhoela-personal/k8s-fastapi-kustomize/actions/workflows/ci.yaml/badge.svg)](https://github.com/lucaspenhoela-personal/k8s-fastapi-kustomize/actions/workflows/ci.yaml)
+
 Aplicacao containerizada (FastAPI + Redis) implantada em Kubernetes com
 manifestos organizados via Kustomize (base + overlays dev/prod). Roda 100%
 local com kind, sem custo. CI no GitHub Actions valida os manifestos e sobe
